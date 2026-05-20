@@ -1,0 +1,95 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# =====================================================================
+# SYSTEM PARAMETERS & TERNARY MATRIX INITIALIZATION
+# =====================================================================
+N = 9          
+T = 300        
+dt = 0.05      
+
+# Explicit 3-6-9 structural nodes (0-indexed indices)
+node_3 = 2
+node_6 = 5
+node_9 = 8
+
+def run_ternary_coupling_simulation(use_explicit_matrix=True):
+    np.random.seed(369)
+    phases = np.random.uniform(0, 2 * np.pi, N)
+    phase_history = [phases.copy()]
+    
+    # Heartbeat frequencies: 3 and 6 are equal and opposite kinetic vectors
+    frequencies = np.zeros(N)
+    frequencies[node_3] = 1.5   
+    frequencies[node_6] = -1.5  
+    frequencies[node_9] = 0.0   
+    
+    for t in range(T):
+        d_phases = np.zeros(N)
+        
+        if use_explicit_matrix:
+            # FRAMEWORK MATRIX: Explicit 3-6-9 Cross-Coupling Logic
+            # 1. The 3-6 Kinetic Bridge: Node 3 and Node 6 couple directly with high strength
+            d_phases[node_3] = frequencies[node_3] + 3.0 * np.sin(phases[node_6] - phases[node_3])
+            d_phases[node_6] = frequencies[node_6] + 3.0 * np.sin(phases[node_3] - phases[node_6])
+            
+            # 2. The remaining environmental nodes feed into the 3-6 grid structurally
+            for i in range(N):
+                if i not in [node_3, node_6, node_9]:
+                    # Background noise patterns pull toward the closest kinetic vertex
+                    d_phases[i] = 0.5 * np.sin(phases[node_3] - phases[i]) + 0.5 * np.sin(phases[node_6] - phases[i])
+            
+            # 3. Node 9 remains an absolute fixed stator anchor (0 radians)
+            phases[node_9] = 0.0
+            
+            # Global zero-point alignment check
+            global_sync_phase = np.arctan2(np.sum(np.sin(phases)), np.sum(np.cos(phases)))
+            d_phases[node_3] -= 0.5 * np.sin(phases[node_3] - global_sync_phase)
+            d_phases[node_6] -= 0.5 * np.sin(phases[node_6] - global_sync_phase)
+            
+        else:
+            # Baseline uncoupled/drifting model (Standard background crowd noise)
+            for i in range(N):
+                coupling_sum = np.sum(np.sin(phases - phases[i]))
+                d_phases[i] = frequencies[i] + (1.0 / N) * coupling_sum
+                
+        # Apply temporal update step
+        phases += d_phases * dt
+        phases = phases % (2 * np.pi)
+        phase_history.append(phases.copy())
+        
+    return np.array(phase_history)
+
+# Execute the explicit ternary coupling vs the baseline drift
+history_ternary = run_ternary_coupling_simulation(use_explicit_matrix=True)
+history_drifting = run_ternary_coupling_simulation(use_explicit_matrix=False)
+
+# =====================================================================
+# VISUALIZATION: TERNARY MATRIX COUPLING
+# =====================================================================
+plt.figure(figsize=(14, 6))
+
+plt.subplot(1, 2, 1)
+plt.plot(np.degrees(history_ternary))
+plt.title("Explicit 3-6-9 Matrix Couplings\n(Perfect phase-locking via the kinetic bridge)")
+plt.xlabel("Time Steps")
+plt.ylabel("Phase Angle (Degrees)")
+plt.ylim(-10, 370)
+plt.grid(True)
+
+plt.subplot(1, 2, 2)
+plt.plot(np.degrees(history_drifting))
+plt.title("Standard Baseline Drift\n(Unstructured phase scattering)")
+plt.xlabel("Time Steps")
+plt.ylabel("Phase Angle (Degrees)")
+plt.ylim(-10, 370)
+plt.grid(True)
+
+plt.tight_layout()
+plt.show()
+
+# Calculate final circular variance
+variance_ternary = 1.0 - np.abs(np.mean(np.exp(1j * history_ternary[-1])))
+variance_drifting = 1.0 - np.abs(np.mean(np.exp(1j * history_drifting[-1])))
+print(f"Explicit 3-6-9 Matrix Variance: {variance_ternary:.4f}")
+print(f"Standard Baseline Drift Variance: {variance_drifting:.4f}")
