@@ -4,9 +4,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from math import pi
+import time
 
 # =====================================================================
-# CORE TERNARY 369 LAYER (Operational Matrix Logic)
+# CORE TERNARY 369 LAYER (unchanged core logic)
 # =====================================================================
 class Ternary369Layer(nn.Module):
     def __init__(self, in_features=8, hidden_nodes=9, coupling_strength=1.3, anchor_strength=2.5):
@@ -35,11 +36,10 @@ class Ternary369Layer(nn.Module):
         
         mean = h.mean(dim=1, keepdim=True)
         h = h - self.anchor_strength * mean
-        h[:, self.idx9] = 0.0  # Absolute zero anchor
+        h[:, self.idx9] = 0.0
         h = h * 0.82
         
         return h
-
 
 # =====================================================================
 # ADVANCED WAVE PHYSICS VISUALIZER
@@ -64,25 +64,19 @@ class WavePhysics369Visualizer:
         self.field = np.zeros((self.res, self.res))
         
         self.field_img = self.ax.imshow(self.field, extent=[-1.55, 1.55, -1.55, 1.55],
-                                        cmap='plasma', alpha=0.45, zorder=0, vmin=-2, vmax=2, origin='lower')
+                                        cmap='plasma', alpha=0.45, zorder=0, vmin=-2, vmax=2)
         
         # Network lines
         self.lines = []
-        self.kinetic_line_idx = None
-        idx = 0
         for i in range(9):
             for j in range(i + 1, 9):
-                is_kinetic = {i, j} == {2, 5}
-                color = '#ffd700' if is_kinetic else '#1f6feb'
-                alpha = 0.75 if is_kinetic else 0.10
-                lw = 4 if is_kinetic else 1
+                color = '#ffd700' if {i, j} == {2, 5} else '#1f6feb'
+                alpha = 0.75 if {i, j} == {2, 5} else 0.10
+                lw = 4 if {i, j} == {2, 5} else 1
                 line, = self.ax.plot([self.x_coords[i], self.x_coords[j]],
                                    [self.y_coords[i], self.y_coords[j]],
                                    color=color, alpha=alpha, linewidth=lw, zorder=1)
                 self.lines.append(line)
-                if is_kinetic:
-                    self.kinetic_line_idx = idx
-                idx += 1
         
         # Nodes
         self.scatter = self.ax.scatter(self.x_coords, self.y_coords, c=np.zeros(9),
@@ -110,59 +104,67 @@ class WavePhysics369Visualizer:
     def generate_input(self):
         t = self.time_step * 0.042
         base = np.sin(t * 1.1) + 0.7 * np.sin(t * 2.8)
-        drift = np.exp(self.time_step * 0.0042) - 1.0  # Exponential load acceleration
+        drift = np.exp(self.time_step * 0.0042) - 1.0
         noise = np.random.randn(8) * 0.055
         x = np.full(8, base + drift) + np.arange(8) * 0.185 + noise
         return torch.tensor(x, dtype=torch.float32).unsqueeze(0)
     
     def compute_interference_field(self, states):
-        """Radiating interference matrix calculation from kinetic nodes 3 and 6"""
+        """Radiating interference from nodes 3 and 6"""
+        field = np.zeros((self.res, self.res))
+        
         pos3 = self.node_pos[2]
         pos6 = self.node_pos[5]
         
-        # Phase accumulation modeled on lived energy (Spantelergia expressions)
         self.phase3 += 0.12 + states[2] * 0.08
         self.phase6 += 0.12 + states[5] * 0.08
+        delta_phase = self.phase3 - self.phase6
         
-        # Compute exact vector distances for radial wave expansion
-        r3 = np.sqrt((self.X - pos3[0])**2 + (self.Y - pos3[1])**2) + 1e-6
-        r6 = np.sqrt((self.X - pos6[0])**2 + (self.Y - pos6[1])**2) + 1e-6
+        for i in range(self.res):
+            for j in range(self.res):
+                p = np.array([self.X[i,j], self.Y[i,j]])
+                
+                r3 = np.linalg.norm(p - pos3) + 1e-6
+                r6 = np.linalg.norm(p - pos6) + 1e-6
+                
+                wave3 = np.sin(self.phase3 - r3 * 9.5) / (r3 ** 0.6)
+                wave6 = np.sin(self.phase6 - r6 * 9.5) / (r6 ** 0.6)
+                
+                interference = wave3 + wave6 + 0.8 * np.sin(delta_phase + (r3 + r6) * 4.2)
+                field[i, j] = interference * (1.0 + 0.4 * states[2] + 0.4 * states[5])
         
-        # Combined radiating interference model with attenuation
-        wave3 = np.sin(self.phase3 - r3 * 8.5) / np.sqrt(r3)
-        wave6 = np.sin(self.phase6 - r6 * 8.5) / np.sqrt(r6)
-        
-        return (wave3 + wave6) * (states[2] - states[5])
-
+        return field
+    
     def update(self, frame):
-        self.time_step = frame
-        x_in = self.generate_input()
-        
+        x = self.generate_input()
         with torch.no_grad():
-            states = self.layer.forward_with_tracking(x_in).squeeze(0).numpy()
-            
-        # 1. Update background radial phase field
-        interference = self.compute_interference_field(states)
-        self.field_img.set_array(interference)
+            states = self.layer.forward_with_tracking(x).squeeze(0).numpy()
         
-        # 2. Update geometric node state arrays
-        self.scatter.set_array(states)
-        sizes = 520 + np.abs(states) * 350
-        self.scatter.set_sizes(sizes)
+        self.field = self.compute_interference_field(states)
+        self.field_img.set_array(self.field)
         
-        # 3. Modulate golden kinetic bridge alpha transparency
-        kinetic_energy = np.abs(states[2] - states[5])
-        bridge_alpha = min(1.0, max(0.15, kinetic_energy * 0.4))
-        self.lines[self.kinetic_line_idx].set_alpha(bridge_alpha)
+        pulse = 1.0 + 0.6 * np.abs(states) * (1.0 + np.sin(self.time_step * 0.35))
+        modulated = states + 1.2 * np.sin(self.time_step * 0.22 + self.angles * 3.0)
         
-        self.title.set_text(f"Spantelergia Phase Field Interference Engine\nTime Step: {frame} | Absolute 9-Stator Invariant")
+        self.scatter.set_array(modulated)
+        self.scatter.set_sizes(520 + np.abs(modulated) * 480 * pulse)
+        
+        kinetic = abs(states[2] - states[5])
+        self.lines[13].set_alpha(min(1.0, 0.3 + kinetic * 1.1))
+        self.lines[13].set_linewidth(4.0 + kinetic * 5.5)
+        
+        self.title.set_text(f"369 Phase Field Engine • Step {self.time_step}\n"
+                           f"Drift: {np.exp(self.time_step*0.0042)-1.0:.2f} | "
+                           f"Δφ: {self.phase3-self.phase6:.2f} | Kinetic Δ: {states[2]-states[5]:.3f}")
+        
+        self.time_step += 1
         return [self.field_img, self.scatter, self.title] + self.lines
 
-    def animate(self, frames=400):
-        ani = animation.FuncAnimation(self.fig, self.update, frames=frames, interval=40, blit=True)
-        plt.show()
-
 if __name__ == "__main__":
-    visualizer = WavePhysics369Visualizer()
-    visualizer.animate()
+    print("🌊 Launching Advanced Phase Field + Radial Pulsing Engine...")
+    viz = WavePhysics369Visualizer()
+    ani = animation.FuncAnimation(viz.fig, viz.update, frames=None,
+                                  interval=50, blit=False, cache_frame_data=False)
+    plt.tight_layout()
+    plt.show()
         
